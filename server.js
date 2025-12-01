@@ -6,7 +6,6 @@ const cors = require("cors");
 const app = express();
 const PORT = process.env.PORT || 4000;
 
-
 // Middleware
 app.use(cors());
 app.use(express.json());
@@ -15,163 +14,101 @@ app.use(express.json());
 const dbPath = process.env.DATABASE_PATH || path.join(__dirname, "glisten.db");
 const db = new sqlite3.Database(dbPath);
 
-db.serialize(() => {
-  db.run(`
-    CREATE TABLE IF NOT EXISTS bookings (
-      id TEXT PRIMARY KEY,
-      createdAt TEXT NOT NULL,
-      status TEXT NOT NULL,
-      name TEXT NOT NULL,
-      email TEXT NOT NULL,
-      phone TEXT NOT NULL,
-      postcode TEXT NOT NULL,
-      preferredDate TEXT NOT NULL,
-      carMake TEXT,
-      carModel TEXT,
-      notes TEXT,
-      servicesJson TEXT NOT NULL,
-      amendNotes TEXT
-    )
-  `);
+// --- Root endpoint for Render ---
+app.get("/", (req, res) => {
+  res.send("Glisten backend is running");
 });
 
-// Generate booking ID
-function generateBookingId(cb) {
-  db.get("SELECT COUNT(*) as count FROM bookings", (err, row) => {
-    if (err) return cb(err);
-    const n = (row.count || 0) + 1;
-    const id = "GLSTN-" + String(n).padStart(6, "0");
-    cb(null, id);
-  });
-}
+// Create bookings table
+db.run(
+  `CREATE TABLE IF NOT EXISTS bookings (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT,
+    email TEXT,
+    phone TEXT,
+    postcode TEXT,
+    car_make TEXT,
+    car_model TEXT,
+    services TEXT,
+    preferred_date TEXT,
+    preferred_time TEXT,
+    status TEXT DEFAULT 'pending'
+  )`
+);
 
-// Create booking
+// Create amend table
+db.run(
+  `CREATE TABLE IF NOT EXISTS amendments (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    booking_id INTEGER,
+    new_date TEXT,
+    new_time TEXT,
+    message TEXT
+  )`
+);
+
+// POST booking request
 app.post("/api/bookings", (req, res) => {
   const {
-    name, email, phone, postcode, preferredDate,
-    carMake, carModel, notes, services
+    name,
+    email,
+    phone,
+    postcode,
+    car_make,
+    car_model,
+    services,
+    preferred_date,
+    preferred_time,
   } = req.body;
 
-  if (!name || !email || !phone || !postcode || !preferredDate || !services) {
-    return res.status(400).json({ error: "Missing required fields" });
-  }
-
-  generateBookingId((err, id) => {
-    if (err) return res.status(500).json({ error: "Failed to generate ID" });
-
-    const createdAt = new Date().toISOString();
-    const status = "pending";
-
-    db.run(
-      `
-      INSERT INTO bookings (
-        id, createdAt, status, name, email, phone, postcode,
-        preferredDate, carMake, carModel, notes, servicesJson
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `,
-      [
-        id,
-        createdAt,
-        status,
-        name,
-        email,
-        phone,
-        postcode,
-        preferredDate,
-        carMake || null,
-        carModel || null,
-        notes || null,
-        JSON.stringify(services)
-      ],
-      (err2) => {
-        if (err2) return res.status(500).json({ error: "Save failed" });
-        res.json({ bookingId: id, status });
-      }
-    );
-  });
-});
-
-// Client amend / cancel request
-app.post("/api/bookings/:id/amend", (req, res) => {
-  const { id } = req.params;
-  const { email, action, details } = req.body;
-
-  if (!email || !action) {
-    return res.status(400).json({ error: "Missing fields" });
-  }
-
-  const newStatus =
-    action === "cancel" ? "cancel_requested" : "change_requested";
-
-  db.get(
-    "SELECT * FROM bookings WHERE id = ? AND email = ?",
-    [id, email],
-    (err, booking) => {
-      if (err) return res.status(500).json({ error: "DB error" });
-      if (!booking) {
-        return res.status(404).json({ error: "Booking not found" });
+  db.run(
+    `INSERT INTO bookings 
+     (name, email, phone, postcode, car_make, car_model, services, preferred_date, preferred_time)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [
+      name,
+      email,
+      phone,
+      postcode,
+      car_make,
+      car_model,
+      JSON.stringify(services),
+      preferred_date,
+      preferred_time,
+    ],
+    function (err) {
+      if (err) {
+        return res.status(500).json({ error: "Failed to create booking" });
       }
 
-      db.run(
-        "UPDATE bookings SET status = ?, amendNotes = ? WHERE id = ?",
-        [newStatus, details || null, id],
-        (err2) => {
-          if (err2) return res.status(500).json({ error: "Update failed" });
-          res.json({ ok: true });
-        }
-      );
+      res.json({ booking_id: this.lastID });
     }
   );
 });
 
-// Admin – List bookings
-app.get("/api/bookings", (req, res) => {
-  const { status } = req.query;
-  let sql = "SELECT * FROM bookings";
-  const params = [];
+// GET booking by ID
+app.get("/api/bookings/:id", (req, res) => {
+  const bookingId = req.params.id;
 
-  if (status) {
-    sql += " WHERE status = ?";
-    params.push(status);
-  }
-
-  sql += " ORDER BY createdAt DESC";
-
-  db.all(sql, params, (err, rows) => {
-    if (err) return res.status(500).json({ error: "DB error" });
-
-    const out = rows.map((row) => ({
-      ...row,
-      services: JSON.parse(row.servicesJson)
-    }));
-    res.json(out);
+  db.get(`SELECT * FROM bookings WHERE id = ?`, [bookingId], (err, row) => {
+    if (err || !row) return res.status(404).json({ error: "Not found" });
+    res.json(row);
   });
 });
 
-// Admin – Confirm booking
-app.post("/api/bookings/:id/confirm", (req, res) => {
-  const { id } = req.params;
+// POST amend booking
+app.post("/api/amend", (req, res) => {
+  const { booking_id, new_date, new_time, message } = req.body;
 
   db.run(
-    "UPDATE bookings SET status = ? WHERE id = ?",
-    ["confirmed", id],
-    (err) => {
-      if (err) return res.status(500).json({ error: "Update failed" });
-      res.json({ ok: true });
-    }
-  );
-});
-
-// Admin – Reject booking
-app.post("/api/bookings/:id/reject", (req, res) => {
-  const { id } = req.params;
-  const { reason } = req.body;
-
-  db.run(
-    "UPDATE bookings SET status = ?, amendNotes = ? WHERE id = ?",
-    ["rejected", reason || null, id],
-    (err) => {
-      if (err) return res.status(500).json({ error: "Update failed" });
+    `INSERT INTO amendments (booking_id, new_date, new_time, message)
+     VALUES (?, ?, ?, ?)`,
+    [booking_id, new_date, new_time, message],
+    function (err) {
+      if (err) {
+        console.log(err);
+        return res.status(500).json({ ok: false });
+      }
       res.json({ ok: true });
     }
   );
@@ -182,7 +119,7 @@ app.get("/health", (req, res) => {
   res.json({ status: "ok" });
 });
 
-
+// Start server
 app.listen(PORT, () => {
   console.log("Glisten backend running on http://localhost:" + PORT);
 });
