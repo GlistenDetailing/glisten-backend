@@ -6,14 +6,17 @@
   "scripts": {
     "start": "node server.js"
   },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
   "dependencies": {
     "cors": "^2.8.5",
     "express": "^4.22.1",
+    "googleapis": "^166.0.0",
+    "node-cron": "^4.2.1",
+    "node-fetch": "^2.7.0",
     "nodemailer": "^6.10.1",
-    "sqlite3": "^5.1.7",
-    "googleapis": "^135.0.0",
-    "node-cron": "^3.0.3",
-    "node-fetch": "^2.7.0"
+    "sqlite3": "^5.1.7"
   },
   "repository": {
     "type": "git",
