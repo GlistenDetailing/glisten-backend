@@ -18,6 +18,9 @@
     "nodemailer": "^6.10.1",
     "sqlite3": "^5.1.7"
   },
+  "engines": {
+    "node": "20.x"
+  },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/GlistenDetailing/glisten-backend.git"
