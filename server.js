@@ -7,10 +7,7 @@ const path = require("path");
 const nodemailer = require("nodemailer");
 const { google } = require("googleapis");
 const fetch = require("node-fetch"); // for calling Distance Matrix API
-<<<<<<< HEAD
 const cron = require("node-cron");   // for daily reminder job
-=======
->>>>>>> 2c6257e (Use env var for Google Calendar credentials)
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -83,8 +80,6 @@ db.serialize(() => {
       );
     }
   });
-<<<<<<< HEAD
-=======
 
   // Table for amend / cancel requests
   db.run(
@@ -108,7 +103,6 @@ db.serialize(() => {
       }
     }
   );
->>>>>>> 2c6257e (Use env var for Google Calendar credentials)
 });
 
 // sqlite helpers
@@ -155,14 +149,6 @@ const transporter = nodemailer.createTransport({
 // Calendar that holds your real availability
 const GOOGLE_CALENDAR_ID = "bookingsglisten@gmail.com";
 
-<<<<<<< HEAD
-// Uses service-account JSON file stored as service-account.json in this folder
-// Scope allows read + write access so we can create and delete events.
-const googleAuth = new google.auth.GoogleAuth({
-  keyFile: path.join(__dirname, "service-account.json"),
-  scopes: ["https://www.googleapis.com/auth/calendar"],
-});
-=======
 // Use service-account JSON from env var GOOGLE_FIREBASE_CREDENTIALS
 let googleAuth = null;
 const rawFirebaseCreds = process.env.GOOGLE_FIREBASE_CREDENTIALS;
@@ -188,7 +174,6 @@ if (rawFirebaseCreds) {
     "⚠️ GOOGLE_FIREBASE_CREDENTIALS not set; Google Calendar features are disabled."
   );
 }
->>>>>>> 2c6257e (Use env var for Google Calendar credentials)
 
 // ------------------ Google Maps Distance Matrix setup ------------------
 
@@ -207,14 +192,11 @@ function isWorkingDay(dateStr) {
  * Returns [{ start, end }] in minutes from midnight.
  */
 async function getBusyIntervalsForDate(dateStr) {
-<<<<<<< HEAD
-=======
   if (!googleAuth) {
     // Calendar disabled; treat as no busy intervals.
     return [];
   }
 
->>>>>>> 2c6257e (Use env var for Google Calendar credentials)
   const dayStart = new Date(dateStr + "T00:00:00");
   const dayEnd = new Date(dateStr + "T23:59:59");
 
@@ -622,12 +604,9 @@ const WORK_END = 16 * 60 + 30;
 // Max travel time between jobs (minutes)
 const TRAVEL_LIMIT_MIN = 20;
 
-<<<<<<< HEAD
-=======
 // EXTRA BUFFER AFTER EACH JOB (minutes)
 const BUFFER_AFTER_JOB_MIN = 30;
 
->>>>>>> 2c6257e (Use env var for Google Calendar credentials)
 // Slot step for searching availability
 const SLOT_STEP_MIN = 15;
 
@@ -747,15 +726,12 @@ async function createOrReplaceCalendarEventForBooking(booking) {
   try {
     if (!booking || booking.status !== "confirmed") return;
     if (!booking.preferred_date || !booking.preferred_time) return;
-<<<<<<< HEAD
-=======
     if (!googleAuth) {
       console.warn(
         "⚠️ Google Calendar not configured; skipping event creation."
       );
       return;
     }
->>>>>>> 2c6257e (Use env var for Google Calendar credentials)
 
     const servicesArray = booking.services
       ? Array.isArray(booking.services)
@@ -775,9 +751,6 @@ async function createOrReplaceCalendarEventForBooking(booking) {
       startDateTime.getTime() + durationMinutes * 60 * 1000
     );
 
-<<<<<<< HEAD
-    const servicesText = formatServicesText(servicesArray);
-=======
     const servicesText = (() => {
       try {
         const services = servicesArray;
@@ -796,7 +769,6 @@ async function createOrReplaceCalendarEventForBooking(booking) {
       }
     })();
 
->>>>>>> 2c6257e (Use env var for Google Calendar credentials)
     const bookingNumber = `GL-${String(booking.id).padStart(5, "0")}`;
 
     const authClient = await googleAuth.getClient();
@@ -874,15 +846,12 @@ async function createOrReplaceCalendarEventForBooking(booking) {
 async function deleteCalendarEventForBooking(booking) {
   try {
     if (!booking || !booking.calendar_event_id) return;
-<<<<<<< HEAD
-=======
     if (!googleAuth) {
       console.warn(
         "⚠️ Google Calendar not configured; skipping event deletion."
       );
       return;
     }
->>>>>>> 2c6257e (Use env var for Google Calendar credentials)
 
     const authClient = await googleAuth.getClient();
     const calendar = google.calendar({ version: "v3", auth: authClient });
@@ -997,12 +966,8 @@ async function validateBooking({ date, postcode, services, preferred_time }) {
   }
 
   const servicesArray = Array.isArray(services) ? services : [];
-<<<<<<< HEAD
-  const requestedDuration = estimateBookingDurationMinutes(servicesArray);
-=======
   const baseDuration = estimateBookingDurationMinutes(servicesArray);
   const requestedDuration = baseDuration + BUFFER_AFTER_JOB_MIN; // add 30-min buffer
->>>>>>> 2c6257e (Use env var for Google Calendar credentials)
   const requestedStart = timeStringToMinutes(preferred_time);
   const requestedEnd = requestedStart + requestedDuration;
 
@@ -1056,27 +1021,16 @@ async function validateBooking({ date, postcode, services, preferred_time }) {
   // Build intervals from bookings + calendar
   const intervals = [];
 
-<<<<<<< HEAD
-  // bookings
-  for (const row of rows) {
-    const svc = row.services ? JSON.parse(row.services) : [];
-    const dur = estimateBookingDurationMinutes(svc);
-=======
   // bookings (duration + 30-min buffer)
   for (const row of rows) {
     const svc = row.services ? JSON.parse(row.services) : [];
     const dur = estimateBookingDurationMinutes(svc) + BUFFER_AFTER_JOB_MIN;
->>>>>>> 2c6257e (Use env var for Google Calendar credentials)
     const start = timeStringToMinutes(row.preferred_time);
     const end = start + dur;
     intervals.push({ start, end, postcode: row.postcode });
   }
 
-<<<<<<< HEAD
-  // calendar busy (no postcode needed)
-=======
   // calendar busy (no postcode needed, no extra buffer)
->>>>>>> 2c6257e (Use env var for Google Calendar credentials)
   for (const c of calendarBusy) {
     intervals.push({ start: c.start, end: c.end, postcode: null });
   }
@@ -1187,10 +1141,7 @@ app.post("/api/bookings", async (req, res) => {
       services,
       preferred_date,
       preferred_time,
-<<<<<<< HEAD
-=======
       // device_token   // <— when you’re ready to store tokens
->>>>>>> 2c6257e (Use env var for Google Calendar credentials)
     } = req.body;
 
     if (!name || !postcode || !preferred_date || !preferred_time) {
@@ -1331,12 +1282,8 @@ app.post("/api/availability", async (req, res) => {
     }
 
     const servicesArray = Array.isArray(services) ? services : [];
-<<<<<<< HEAD
-    const requestedDuration = estimateBookingDurationMinutes(servicesArray);
-=======
     const baseDuration = estimateBookingDurationMinutes(servicesArray);
     const requestedDuration = baseDuration + BUFFER_AFTER_JOB_MIN; // duration + buffer
->>>>>>> 2c6257e (Use env var for Google Calendar credentials)
 
     const rows = await dbAll(
       `SELECT * FROM bookings
@@ -1373,17 +1320,10 @@ app.post("/api/availability", async (req, res) => {
 
     const intervals = [];
 
-<<<<<<< HEAD
-    // bookings
-    for (const row of rows) {
-      const svc = row.services ? JSON.parse(row.services) : [];
-      const dur = estimateBookingDurationMinutes(svc);
-=======
     // bookings (duration + buffer)
     for (const row of rows) {
       const svc = row.services ? JSON.parse(row.services) : [];
       const dur = estimateBookingDurationMinutes(svc) + BUFFER_AFTER_JOB_MIN;
->>>>>>> 2c6257e (Use env var for Google Calendar credentials)
       const start = timeStringToMinutes(row.preferred_time);
       const end = start + dur;
       intervals.push({ start, end, postcode: row.postcode });
@@ -1529,51 +1469,6 @@ app.post("/api/date-availability", async (req, res) => {
   }
 });
 
-<<<<<<< HEAD
-// Trigger reminder emails manually / via secret (optional manual trigger)
-app.post("/api/send-reminders", async (req, res) => {
-  const secretHeader = req.headers["x-reminder-secret"];
-  const expectedSecret = process.env.REMINDER_SECRET;
-
-  if (!expectedSecret) {
-    console.warn(
-      "⚠️ REMINDER_SECRET is not set; /api/send-reminders is effectively disabled."
-    );
-    return res
-      .status(500)
-      .json({ error: "REMINDER_SECRET not configured on the server" });
-  }
-
-  if (!secretHeader || secretHeader !== expectedSecret) {
-    return res.status(403).json({ error: "Forbidden" });
-  }
-
-  try {
-    const sentCount = await processBookingReminders();
-    res.json({ ok: true, reminders_sent: sentCount });
-  } catch (err) {
-    console.error("Failed to process reminders:", err);
-    res.status(500).json({ error: "Failed to process reminders" });
-  }
-});
-
-// ------------------ Daily cron job (strict reminder rule) ------------------
-
-// Runs every day at 09:00 London time, using the same strict logic
-cron.schedule(
-  "0 9 * * *",
-  async () => {
-    console.log("⏰ Running daily reminder check (cron)...");
-    try {
-      const sentCount = await processBookingReminders();
-      console.log(`✅ Reminder job complete – sent ${sentCount} reminders.`);
-    } catch (err) {
-      console.error("❌ Reminder cron job failed:", err);
-    }
-  },
-  { timezone: "Europe/London" }
-);
-=======
 // ------------------ Amend / Cancel endpoints ------------------
 
 /**
@@ -1729,7 +1624,23 @@ app.post("/api/send-reminders", async (req, res) => {
     res.status(500).json({ error: "Failed to process reminders" });
   }
 });
->>>>>>> 2c6257e (Use env var for Google Calendar credentials)
+
+// ------------------ Daily cron job (strict reminder rule) ------------------
+
+// Runs every day at 09:00 London time, using the same strict logic
+cron.schedule(
+  "0 9 * * *",
+  async () => {
+    console.log("⏰ Running daily reminder check (cron)...");
+    try {
+      const sentCount = await processBookingReminders();
+      console.log(`✅ Reminder job complete – sent ${sentCount} reminders.`);
+    } catch (err) {
+      console.error("❌ Reminder cron job failed:", err);
+    }
+  },
+  { timezone: "Europe/London" }
+);
 
 // ------------------ Start server ------------------
 
