@@ -1127,6 +1127,90 @@ app.get("/api/bookings", async (req, res) => {
   }
 });
 
+// Admin: update booking details (and resync calendar if needed)
+app.patch("/api/bookings/:id", async (req, res) => {
+  try {
+    const bookingId = req.params.id;
+
+    // Fields the admin is allowed to change from the panel
+    const {
+      name,
+      email,
+      phone,
+      postcode,
+      car_make,
+      car_model,
+      services,
+      preferred_date,
+      preferred_time,
+      status, // optional: admin may also tweak status here
+    } = req.body || {};
+
+    // We'll treat "missing" as "leave unchanged";
+    // so we use COALESCE(?, column) in SQL.
+    const servicesJson =
+      Array.isArray(services) ? JSON.stringify(services) : null;
+
+    const result = await dbRun(
+      `UPDATE bookings
+         SET
+           name           = COALESCE(?, name),
+           email          = COALESCE(?, email),
+           phone          = COALESCE(?, phone),
+           postcode       = COALESCE(?, postcode),
+           car_make       = COALESCE(?, car_make),
+           car_model      = COALESCE(?, car_model),
+           services       = COALESCE(?, services),
+           preferred_date = COALESCE(?, preferred_date),
+           preferred_time = COALESCE(?, preferred_time),
+           status         = COALESCE(?, status)
+       WHERE id = ?`,
+      [
+        name ?? null,
+        email ?? null,
+        phone ?? null,
+        postcode ?? null,
+        car_make ?? null,
+        car_model ?? null,
+        servicesJson,
+        preferred_date ?? null,
+        preferred_time ?? null,
+        status ?? null,
+        bookingId,
+      ]
+    );
+
+    if (result.changes === 0) {
+      return res.status(404).json({ error: "Booking not found" });
+    }
+
+    const updated = await dbGet(
+      `SELECT * FROM bookings WHERE id = ?`,
+      [bookingId]
+    );
+
+    if (!updated) {
+      return res.status(404).json({ error: "Booking not found" });
+    }
+
+    updated.services = updated.services ? JSON.parse(updated.services) : [];
+
+    // Calendar sync logic:
+    // - if booking is confirmed, (re)create event with new details
+    // - if booking is declined/cancelled, remove event
+    if (updated.status === "confirmed") {
+      await createOrReplaceCalendarEventForBooking(updated);
+    } else if (["declined", "cancelled"].includes(updated.status)) {
+      await deleteCalendarEventForBooking(updated);
+    }
+
+    res.json(updated);
+  } catch (err) {
+    console.error("Failed to update booking:", err);
+    res.status(500).json({ error: "Failed to update booking" });
+  }
+});
+
 // Get single booking
 app.get("/api/bookings/:id", async (req, res) => {
   try {
@@ -1220,13 +1304,14 @@ app.post("/api/bookings", async (req, res) => {
   }
 });
 
-// Update booking status (confirm/decline)
+// Update booking status (confirm / decline / cancel)
 app.patch("/api/bookings/:id/status", async (req, res) => {
   try {
     const bookingId = req.params.id;
     const { status } = req.body;
 
-    const allowedStatuses = ["pending", "confirmed", "declined"];
+    // now includes "cancelled"
+    const allowedStatuses = ["pending", "confirmed", "declined", "cancelled"];
     if (!allowedStatuses.includes(status)) {
       return res.status(400).json({ error: "Invalid status" });
     }
@@ -1251,13 +1336,15 @@ app.patch("/api/bookings/:id/status", async (req, res) => {
 
     updated.services = updated.services ? JSON.parse(updated.services) : [];
 
-    // send accept/decline email
+    // optional: extend sendBookingDecisionEmail to handle "cancelled" nicely
     sendBookingDecisionEmail(updated);
 
-    // handle calendar behaviour based on status
+    // Calendar behaviour:
+    //  - confirmed  => create/update event
+    //  - declined/cancelled => remove event (if any)
     if (updated.status === "confirmed") {
       createOrReplaceCalendarEventForBooking(updated);
-    } else if (updated.status === "declined") {
+    } else if (["declined", "cancelled"].includes(updated.status)) {
       deleteCalendarEventForBooking(updated);
     }
 
