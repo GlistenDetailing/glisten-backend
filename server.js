@@ -149,31 +149,50 @@ const transporter = nodemailer.createTransport({
 // Calendar that holds your real availability
 const GOOGLE_CALENDAR_ID = "bookingsglisten@gmail.com";
 
-// Use service-account JSON from env var GOOGLE_FIREBASE_CREDENTIALS
+// Use service-account JSON from env (prefer base64, fall back to plain JSON)
 let googleAuth = null;
-const rawFirebaseCreds = process.env.GOOGLE_FIREBASE_CREDENTIALS;
 
-if (rawFirebaseCreds) {
+function initGoogleAuthFromEnv() {
   try {
-    const creds = JSON.parse(rawFirebaseCreds);
+    const b64 = process.env.GOOGLE_FIREBASE_CREDENTIALS_B64;
+    const raw = process.env.GOOGLE_FIREBASE_CREDENTIALS; // optional fallback for local dev
+
+    let jsonString = null;
+
+    // 1) Try base64-encoded JSON (Render)
+    if (b64 && b64.trim().length > 0) {
+      jsonString = Buffer.from(b64, "base64").toString("utf8");
+    }
+    // 2) Fallback: raw JSON in env (for local testing if you ever want it)
+    else if (raw && raw.trim().length > 0) {
+      jsonString = raw;
+    } else {
+      console.warn(
+        "⚠️ GOOGLE_FIREBASE_CREDENTIALS_B64 / GOOGLE_FIREBASE_CREDENTIALS not set; Google Calendar features are disabled."
+      );
+      return;
+    }
+
+    const creds = JSON.parse(jsonString);
     googleAuth = new google.auth.GoogleAuth({
       credentials: creds,
       scopes: ["https://www.googleapis.com/auth/calendar"],
     });
+
     console.log(
       `✅ Google Calendar auth initialised for project ${creds.project_id}`
     );
   } catch (err) {
     console.error(
-      "❌ Failed to parse GOOGLE_FIREBASE_CREDENTIALS for Calendar:",
+      "❌ Failed to initialise Google Calendar credentials from env:",
       err
     );
   }
-} else {
-  console.warn(
-    "⚠️ GOOGLE_FIREBASE_CREDENTIALS not set; Google Calendar features are disabled."
-  );
 }
+
+initGoogleAuthFromEnv();
+
+
 
 // ------------------ Google Maps Distance Matrix setup ------------------
 
