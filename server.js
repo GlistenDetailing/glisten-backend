@@ -1,12 +1,10 @@
-// server.js
-
 const express = require("express");
 const cors = require("cors");
 const sqlite3 = require("sqlite3").verbose();
 const path = require("path");
 const nodemailer = require("nodemailer");
 const { google } = require("googleapis");
-const fetch = require("node-fetch"); // for calling Distance Matrix API
+const fetch = require("node-fetch"); // for calling Distance Matrix API + weather APIs
 const cron = require("node-cron");   // for daily reminder job
 
 const app = express();
@@ -103,6 +101,18 @@ db.serialize(() => {
       }
     }
   );
+
+  // 🔧 Normalise any legacy status values (trim + lowercase)
+  db.run(
+    "UPDATE bookings SET status = LOWER(TRIM(status)) WHERE status IS NOT NULL",
+    (err) => {
+      if (err) {
+        console.error("Failed to normalise existing booking statuses:", err);
+      } else {
+        console.log("✅ Normalised existing booking statuses");
+      }
+    }
+  );
 });
 
 // sqlite helpers
@@ -192,8 +202,6 @@ function initGoogleAuthFromEnv() {
 
 initGoogleAuthFromEnv();
 
-
-
 // ------------------ Google Maps Distance Matrix setup ------------------
 
 const GOOGLE_MAPS_API_KEY =
@@ -204,6 +212,27 @@ function isWorkingDay(dateStr) {
   const d = new Date(dateStr + "T00:00:00");
   const day = d.getDay(); // 0 = Sun, 1 = Mon, ..., 6 = Sat
   return day >= 1 && day <= 5;
+}
+
+// ------------------ Shared Calendar helpers ------------------
+
+// Global helper (used by BOTH availability + sync job)
+function extractDateAndTimeFromEvent(event) {
+  if (!event || !event.start) return null;
+
+  const start = event.start;
+  const dateTime =
+    start.dateTime || (start.date ? start.date + "T00:00:00" : null);
+  if (!dateTime) return null;
+
+  const d = new Date(dateTime);
+
+  const dateStr = d.toISOString().slice(0, 10); // YYYY-MM-DD
+  const hh = String(d.getHours()).padStart(2, "0");
+  const mm = String(d.getMinutes()).padStart(2, "0");
+  const timeStr = `${hh}:${mm}`;
+
+  return { date: dateStr, time: timeStr };
 }
 
 /**
@@ -382,7 +411,7 @@ async function sendBookingDecisionEmail(booking) {
   if (!booking.email) return;
 
   const bookingNumber = `GL-${String(booking.id).padStart(5, "0")}`;
-  const status = booking.status; // "confirmed" or "declined"
+  const status = booking.status; // "confirmed" or "declined" or "cancelled"
   const servicesText = formatServicesText(booking.services);
 
   let subject;
@@ -496,6 +525,44 @@ Glisten
       <p>
         You can submit a new request in the Glisten mobile app using this booking number
         as a reference, or reply to this email to discuss alternative options.
+      </p>
+
+      <p>Kind regards,<br/>Glisten</p>
+    </div>
+    `.trim();
+  } else if (status === "cancelled") {
+    subject = `Your booking has been cancelled – ${bookingNumber}`;
+
+    textBody = `
+Hi ${booking.name || ""},
+
+Your booking with Glisten has been cancelled.
+
+Booking number: ${bookingNumber}
+
+If this was a mistake or you’d like to re-book, you can submit a new booking in the Glisten app or reply directly to this email.
+
+Kind regards,
+Glisten
+`.trim();
+
+    htmlBody = `
+    <div style="font-family: Arial, sans-serif; font-size: 14px; color: #222;">
+      <div style="margin-bottom: 16px;">
+        <img src="cid:glistenLogo"
+             alt="Glisten Detailing"
+             style="max-width: 240px; height: auto;" />
+      </div>
+
+      <p>Hi ${booking.name || ""},</p>
+
+      <p>Your booking with <strong>Glisten</strong> has been <strong>cancelled</strong>.</p>
+
+      <p><strong>Booking number:</strong> ${bookingNumber}</p>
+
+      <p>
+        If this was a mistake or you’d like to re-book, you can submit a new booking
+        in the Glisten app or reply directly to this email.
       </p>
 
       <p>Kind regards,<br/>Glisten</p>
@@ -739,7 +806,168 @@ function estimateBookingDurationMinutes(services) {
   return total;
 }
 
+// ------------------ Weather helpers (heavy rain warning only) ------------------
+
+/**
+ * Geocode a postcode to { lat, lng } using Google Maps Geocoding API.
+ * Returns null on any error.
+ */
+async function geocodePostcode(postcode) {
+  try {
+    if (!postcode) return null;
+    const addr = encodeURIComponent(postcode.trim());
+    const url = `https://maps.googleapis.com/maps/api/geocode/json?address=${addr}&key=${GOOGLE_MAPS_API_KEY}`;
+
+    const res = await fetch(url);
+    if (!res.ok) {
+      console.error("Geocoding HTTP error:", res.status, res.statusText);
+      return null;
+    }
+
+    const data = await res.json();
+    if (data.status !== "OK" || !data.results || !data.results[0]) {
+      console.error("Geocoding bad response:", data.status, data.error_message);
+      return null;
+    }
+
+    const loc = data.results[0].geometry.location;
+    if (
+      !loc ||
+      typeof loc.lat !== "number" ||
+      typeof loc.lng !== "number"
+    ) {
+      return null;
+    }
+
+    return { lat: loc.lat, lng: loc.lng };
+  } catch (err) {
+    console.error("Failed to call Geocoding API:", err);
+    return null;
+  }
+}
+
+/**
+ * Get total daily precipitation (mm) for a given date/postcode using Open-Meteo.
+ * Returns { precipitationMm, sourceAvailable }.
+ */
+async function getDailyPrecipitationMm(dateStr, postcode) {
+  try {
+    const geo = await geocodePostcode(postcode);
+    if (!geo) {
+      return { precipitationMm: null, sourceAvailable: false };
+    }
+
+    const { lat, lng } = geo;
+    const url = `https://api.open-meteo.com/v1/forecast?latitude=${encodeURIComponent(
+      lat
+    )}&longitude=${encodeURIComponent(
+      lng
+    )}&daily=precipitation_sum&timezone=Europe%2FLondon&start_date=${encodeURIComponent(
+      dateStr
+    )}&end_date=${encodeURIComponent(dateStr)}`;
+
+    const res = await fetch(url);
+    if (!res.ok) {
+      console.error("Open-Meteo HTTP error:", res.status, res.statusText);
+      return { precipitationMm: null, sourceAvailable: false };
+    }
+
+    const data = await res.json();
+    if (
+      !data.daily ||
+      !Array.isArray(data.daily.precipitation_sum) ||
+      data.daily.precipitation_sum.length === 0
+    ) {
+      console.error("Open-Meteo: missing daily precipitation_sum");
+      return { precipitationMm: null, sourceAvailable: false };
+    }
+
+    const mm = Number(data.daily.precipitation_sum[0]);
+    if (!isFinite(mm)) {
+      return { precipitationMm: null, sourceAvailable: false };
+    }
+
+    return { precipitationMm: mm, sourceAvailable: true };
+  } catch (err) {
+    console.error("Failed to call Open-Meteo API:", err);
+    return { precipitationMm: null, sourceAvailable: false };
+  }
+}
+
 // ------------------ Calendar event helpers ------------------
+
+async function syncConfirmedBookingsFromCalendar() {
+  if (!googleAuth) {
+    console.warn(
+      "⚠️ Google Calendar not configured; skipping calendar→booking sync."
+    );
+    return 0;
+  }
+
+  try {
+    const authClient = await googleAuth.getClient();
+    const calendar = google.calendar({ version: "v3", auth: authClient });
+
+    const rows = await dbAll(
+      `SELECT id, calendar_event_id, preferred_date, preferred_time
+         FROM bookings
+        WHERE status = 'confirmed'
+          AND calendar_event_id IS NOT NULL`
+    );
+
+    let updatedCount = 0;
+
+    for (const row of rows) {
+      if (!row.calendar_event_id) continue;
+
+      try {
+        const res = await calendar.events.get({
+          calendarId: GOOGLE_CALENDAR_ID,
+          eventId: row.calendar_event_id,
+        });
+
+        const event = res.data;
+        const dt = extractDateAndTimeFromEvent(event);
+        if (!dt) continue;
+
+        const newDate = dt.date;
+        const newTime = dt.time;
+        const oldDate = row.preferred_date;
+        const oldTime = row.preferred_time;
+
+        if (newDate !== oldDate || newTime !== oldTime) {
+          await dbRun(
+            `UPDATE bookings
+               SET preferred_date = ?, preferred_time = ?
+             WHERE id = ?`,
+            [newDate, newTime, row.id]
+          );
+
+          console.log(
+            `🔄 Synced booking ${row.id} from Calendar: ${oldDate} ${oldTime} -> ${newDate} ${newTime}`
+          );
+          updatedCount++;
+        }
+      } catch (err) {
+        if (err && err.code === 404) {
+          console.warn(
+            `⚠️ Calendar event ${row.calendar_event_id} for booking ${row.id} not found; leaving booking unchanged.`
+          );
+        } else {
+          console.error(
+            `❌ Failed to sync booking ${row.id} from Calendar:`,
+            err.message || err
+          );
+        }
+      }
+    }
+
+    return updatedCount;
+  } catch (err) {
+    console.error("❌ Calendar→booking sync job failed:", err);
+    return 0;
+  }
+}
 
 async function createOrReplaceCalendarEventForBooking(booking) {
   try {
@@ -1132,8 +1360,7 @@ app.patch("/api/bookings/:id", async (req, res) => {
   try {
     const bookingId = req.params.id;
 
-    // Fields the admin is allowed to change from the panel
-    const {
+    let {
       name,
       email,
       phone,
@@ -1143,13 +1370,24 @@ app.patch("/api/bookings/:id", async (req, res) => {
       services,
       preferred_date,
       preferred_time,
-      status, // optional: admin may also tweak status here
+      status,
     } = req.body || {};
 
-    // We'll treat "missing" as "leave unchanged";
-    // so we use COALESCE(?, column) in SQL.
     const servicesJson =
       Array.isArray(services) ? JSON.stringify(services) : null;
+
+    // 🔧 normalise and validate status if provided
+    let normalizedStatus = null;
+    if (typeof status === "string") {
+      const trimmed = status.trim().toLowerCase();
+      const allowedStatuses = ["pending", "confirmed", "declined", "cancelled"];
+      if (allowedStatuses.includes(trimmed)) {
+        normalizedStatus = trimmed;
+      } else {
+        // invalid status payload → ignore status change
+        normalizedStatus = null;
+      }
+    }
 
     const result = await dbRun(
       `UPDATE bookings
@@ -1175,7 +1413,7 @@ app.patch("/api/bookings/:id", async (req, res) => {
         servicesJson,
         preferred_date ?? null,
         preferred_time ?? null,
-        status ?? null,
+        normalizedStatus,
         bookingId,
       ]
     );
@@ -1195,9 +1433,6 @@ app.patch("/api/bookings/:id", async (req, res) => {
 
     updated.services = updated.services ? JSON.parse(updated.services) : [];
 
-    // Calendar sync logic:
-    // - if booking is confirmed, (re)create event with new details
-    // - if booking is declined/cancelled, remove event
     if (updated.status === "confirmed") {
       await createOrReplaceCalendarEventForBooking(updated);
     } else if (["declined", "cancelled"].includes(updated.status)) {
@@ -1244,7 +1479,7 @@ app.post("/api/bookings", async (req, res) => {
       services,
       preferred_date,
       preferred_time,
-      // device_token   // <— when you’re ready to store tokens
+      // device_token
     } = req.body;
 
     if (!name || !postcode || !preferred_date || !preferred_time) {
@@ -1308,9 +1543,12 @@ app.post("/api/bookings", async (req, res) => {
 app.patch("/api/bookings/:id/status", async (req, res) => {
   try {
     const bookingId = req.params.id;
-    const { status } = req.body;
+    let { status } = req.body || {};
 
-    // now includes "cancelled"
+    if (typeof status === "string") {
+      status = status.trim().toLowerCase();
+    }
+
     const allowedStatuses = ["pending", "confirmed", "declined", "cancelled"];
     if (!allowedStatuses.includes(status)) {
       return res.status(400).json({ error: "Invalid status" });
@@ -1336,12 +1574,8 @@ app.patch("/api/bookings/:id/status", async (req, res) => {
 
     updated.services = updated.services ? JSON.parse(updated.services) : [];
 
-    // optional: extend sendBookingDecisionEmail to handle "cancelled" nicely
     sendBookingDecisionEmail(updated);
 
-    // Calendar behaviour:
-    //  - confirmed  => create/update event
-    //  - declined/cancelled => remove event (if any)
     if (updated.status === "confirmed") {
       createOrReplaceCalendarEventForBooking(updated);
     } else if (["declined", "cancelled"].includes(updated.status)) {
@@ -1382,14 +1616,13 @@ app.post("/api/availability", async (req, res) => {
         .json({ error: "date and postcode are required" });
     }
 
-    // Block weekends completely
     if (!isWorkingDay(date)) {
       return res.json({ date, slots: [] });
     }
 
     const servicesArray = Array.isArray(services) ? services : [];
     const baseDuration = estimateBookingDurationMinutes(servicesArray);
-    const requestedDuration = baseDuration + BUFFER_AFTER_JOB_MIN; // duration + buffer
+    const requestedDuration = baseDuration + BUFFER_AFTER_JOB_MIN;
 
     const rows = await dbAll(
       `SELECT * FROM bookings
@@ -1399,8 +1632,6 @@ app.post("/api/availability", async (req, res) => {
       [date]
     );
 
-    // If all existing bookings that day are more than 20 driving minutes away,
-    // then there should be no slots for this postcode on that day.
     if (rows.length > 0) {
       let allFar = true;
       for (const row of rows) {
@@ -1415,18 +1646,15 @@ app.post("/api/availability", async (req, res) => {
       }
     }
 
-    // Calendar busy intervals for that date
     let calendarBusy = [];
     try {
       calendarBusy = await getBusyIntervalsForDate(date);
     } catch (err) {
       console.error("Failed to load Google Calendar intervals:", err);
-      // ignore calendar on error
     }
 
     const intervals = [];
 
-    // bookings (duration + buffer)
     for (const row of rows) {
       const svc = row.services ? JSON.parse(row.services) : [];
       const dur = estimateBookingDurationMinutes(svc) + BUFFER_AFTER_JOB_MIN;
@@ -1435,7 +1663,6 @@ app.post("/api/availability", async (req, res) => {
       intervals.push({ start, end, postcode: row.postcode });
     }
 
-    // calendar busy
     for (const c of calendarBusy) {
       intervals.push({ start: c.start, end: c.end, postcode: null });
     }
@@ -1507,7 +1734,6 @@ app.post("/api/date-availability", async (req, res) => {
 
     const normPostcode = normalizePostcode(postcode);
 
-    // Get all bookings in the range
     const rows = await dbAll(
       `SELECT * FROM bookings
        WHERE preferred_date BETWEEN ? AND ?
@@ -1515,7 +1741,6 @@ app.post("/api/date-availability", async (req, res) => {
       [start_date, end_date]
     );
 
-    // Group bookings by date
     const byDate = {};
     for (const row of rows) {
       if (!byDate[row.preferred_date]) {
@@ -1524,7 +1749,6 @@ app.post("/api/date-availability", async (req, res) => {
       byDate[row.preferred_date].push(row);
     }
 
-    // Walk each day from start_date to end_date
     const dates = [];
     const start = new Date(start_date + "T00:00:00");
     const end = new Date(end_date + "T00:00:00");
@@ -1534,13 +1758,12 @@ app.post("/api/date-availability", async (req, res) => {
       d <= end;
       d.setDate(d.getDate() + 1)
     ) {
-      const dStr = d.toISOString().slice(0, 10); // YYYY-MM-DD
+      const dStr = d.toISOString().slice(0, 10);
       const bookingsForDay = byDate[dStr] || [];
 
       let inArea = true;
 
       if (!isWorkingDay(dStr)) {
-        // Weekends always unavailable
         inArea = false;
       } else if (bookingsForDay.length > 0) {
         let allFar = true;
@@ -1551,9 +1774,8 @@ app.post("/api/date-availability", async (req, res) => {
             break;
           }
         }
-        inArea = !allFar; // inArea = false if all bookings are too far away
+        inArea = !allFar;
       } else {
-        // Weekday with no bookings yet: open day, inArea = true
         inArea = true;
       }
 
@@ -1577,10 +1799,6 @@ app.post("/api/date-availability", async (req, res) => {
 
 // ------------------ Amend / Cancel endpoints ------------------
 
-/**
- * Customer-facing: create an amend/cancel request.
- * Body: { booking_reference: "GL-00023", email: "...", action: "amend"|"cancel", message?: string }
- */
 app.post("/api/amend-booking", async (req, res) => {
   try {
     const { booking_reference, email, action, message } = req.body || {};
@@ -1600,7 +1818,6 @@ app.post("/api/amend-booking", async (req, res) => {
       });
     }
 
-    // Try to resolve booking_id from reference (GL-00023 → 23)
     let bookingId = null;
     const ref = String(booking_reference).trim().toUpperCase();
 
@@ -1643,9 +1860,6 @@ app.post("/api/amend-booking", async (req, res) => {
   }
 });
 
-/**
- * Admin: list amend / cancel requests.
- */
 app.get("/api/amend-requests", async (req, res) => {
   try {
     const rows = await dbAll(
@@ -1659,10 +1873,6 @@ app.get("/api/amend-requests", async (req, res) => {
   }
 });
 
-/**
- * Admin: update amend request status (eg. mark as processed).
- * Body: { status: "pending" | "processed" }
- */
 app.patch("/api/amend-requests/:id/status", async (req, res) => {
   try {
     const id = req.params.id;
@@ -1704,7 +1914,6 @@ app.patch("/api/amend-requests/:id/status", async (req, res) => {
 
 // ------------------ Reminder trigger endpoint ------------------
 
-// Trigger reminder emails manually / via cron, protected by a shared secret
 app.post("/api/send-reminders", async (req, res) => {
   const secretHeader = req.headers["x-reminder-secret"];
   const expectedSecret = process.env.REMINDER_SECRET;
@@ -1731,9 +1940,81 @@ app.post("/api/send-reminders", async (req, res) => {
   }
 });
 
-// ------------------ Daily cron job (strict reminder rule) ------------------
+// ------------------ Calendar sync endpoint (for Admin Refresh) ------------------
 
-// Runs every day at 09:00 London time, using the same strict logic
+app.post("/api/sync-calendar", async (req, res) => {
+  try {
+    const updated = await syncConfirmedBookingsFromCalendar();
+    res.json({ ok: true, updated });
+  } catch (err) {
+    console.error("Failed to sync from calendar:", err);
+    res.status(500).json({ error: "Failed to sync from calendar" });
+  }
+});
+
+// ------------------ NEW: Weather-check endpoint (heavy rain warning only) ------------------
+
+app.post("/api/weather-check", async (req, res) => {
+  try {
+    const { date, postcode } = req.body || {};
+
+    if (!date || !postcode) {
+      return res.status(400).json({
+        error: "MISSING_FIELDS",
+        message: "date and postcode are required.",
+      });
+    }
+
+    const normPostcode = normalizePostcode(postcode);
+
+    // Only forecast on working days; weekends are irrelevant for bookings
+    if (!isWorkingDay(date)) {
+      return res.json({
+        date,
+        postcode: normPostcode,
+        heavy_rain: false,
+        precipitation_mm: null,
+        source_available: true,
+      });
+    }
+
+    const { precipitationMm, sourceAvailable } =
+      await getDailyPrecipitationMm(date, normPostcode);
+
+    // If we couldn't reach the weather source, return "no warning"
+    if (!sourceAvailable || precipitationMm == null) {
+      return res.json({
+        date,
+        postcode: normPostcode,
+        heavy_rain: false,
+        precipitation_mm: null,
+        source_available: false,
+      });
+    }
+
+    // Simple threshold: treat >= 8mm of rain as "heavy rain" for warning purposes
+    const HEAVY_RAIN_THRESHOLD_MM = 4;
+    const heavyRain = precipitationMm >= HEAVY_RAIN_THRESHOLD_MM;
+
+    res.json({
+      date,
+      postcode: normPostcode,
+      heavy_rain: heavyRain,
+      precipitation_mm: precipitationMm,
+      source_available: true,
+    });
+  } catch (err) {
+    console.error("Failed to process weather-check:", err);
+    res.status(500).json({
+      error: "WEATHER_CHECK_FAILED",
+      message: "Failed to check weather for this date.",
+    });
+  }
+});
+
+// ------------------ Cron jobs ------------------
+
+// Daily reminder at 09:00
 cron.schedule(
   "0 9 * * *",
   async () => {
@@ -1747,6 +2028,23 @@ cron.schedule(
   },
   { timezone: "Europe/London" }
 );
+
+// Calendar → Booking sync every 1 minute (DISABLED)
+//
+// This used to keep bookings in sync when events were manually moved in Google
+// Calendar. That behaviour is no longer supported because it caused
+// unpredictable changes. The cron job is now intentionally disabled. You can
+// still trigger a manual sync via the /api/sync-calendar endpoint if needed.
+//
+// cron.schedule("*/1 * * * *", async () => {
+//   console.log("⏰ Running calendar→booking sync job...");
+//   try {
+//     const updated = await syncConfirmedBookingsFromCalendar();
+//     console.log(`✅ Calendar sync complete – updated ${updated} bookings.`);
+//   } catch (err) {
+//     console.error("❌ Calendar sync cron job failed:", err);
+//   }
+// });
 
 // ------------------ Start server ------------------
 
