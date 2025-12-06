@@ -1643,6 +1643,30 @@ app.delete("/api/bookings/history", async (req, res) => {
   }
 });
 
+// Hard delete a single booking by ID (useful for test data)
+app.delete("/api/bookings/:id", async (req, res) => {
+  try {
+    const bookingId = req.params.id;
+
+    const result = await dbRun(
+      `DELETE FROM bookings WHERE id = ?`,
+      [bookingId]
+    );
+
+    if ((result.changes || 0) === 0) {
+      return res.status(404).json({ error: "Booking not found" });
+    }
+
+    res.json({
+      ok: true,
+      deleted_id: bookingId,
+    });
+  } catch (err) {
+    console.error("Failed to delete booking:", err);
+    res.status(500).json({ error: "Failed to delete booking" });
+  }
+});
+
 // Time-slot availability for a specific date
 app.post("/api/availability", async (req, res) => {
   try {
