@@ -685,114 +685,6 @@ ${BUSINESS_NAME}
   }
 }
 
-  const mailOptions = {
-    from: EMAIL_FROM,
-    to: booking.email,
-    subject,
-    text: textBody,
-    html: htmlBody,
-    attachments: [
-      {
-        filename: "logo.png",
-        path: path.join(__dirname, "logo.png"),
-        cid: "glistenLogo",
-      },
-    ],
-  };
-
-  try {
-    await transporter.sendMail(mailOptions);
-    console.log(
-      `✅ Sent DECISION (${status}) email for booking ${booking.id} to ${booking.email}`
-    );
-  } catch (err) {
-    console.error("❌ Failed to send decision email:", err);
-  }
-}
-
-// Email reminder 1 day before the booking (for confirmed bookings only)
-async function sendBookingReminderEmail(booking) {
-  if (!booking.email) return;
-
-  const bookingNumber = `GL-${String(booking.id).padStart(5, "0")}`;
-  const servicesText = formatServicesText(booking.services);
-
-  const textBody = `
-Hi ${booking.name || ""},
-
-This is a quick reminder about your Glisten booking tomorrow.
-
-Booking number: ${bookingNumber}
-
-Details:
-- Date: ${booking.preferred_date}
-- Time: ${booking.preferred_time}
-- Postcode: ${booking.postcode}
-- Car: ${booking.car_make || ""} ${booking.car_model || ""}
-- Services: ${servicesText}
-
-If you need to amend or cancel, you can use your booking number in the Glisten mobile app, or reply directly to this email.
-
-Kind regards,
-Glisten
-`.trim();
-
-  const htmlBody = `
-  <div style="font-family: Arial, sans-serif; font-size: 14px; color: #222;">
-    <div style="margin-bottom: 16px;">
-      <img src="cid:glistenLogo"
-           alt="Glisten Detailing"
-           style="max-width: 240px; height: auto;" />
-    </div>
-
-    <p>Hi ${booking.name || ""},</p>
-
-    <p>This is a quick reminder about your <strong>Glisten</strong> booking <strong>tomorrow</strong>.</p>
-
-    <p><strong>Booking number:</strong> ${bookingNumber}</p>
-
-    <p><strong>Details:</strong><br/>
-      - Date: ${booking.preferred_date}<br/>
-      - Time: ${booking.preferred_time}<br/>
-      - Postcode: ${booking.postcode}<br/>
-      - Car: ${booking.car_make || ""} ${booking.car_model || ""}<br/>
-      - Services: ${servicesText}
-    </p>
-
-    <p>
-      If you need to amend or cancel, you can use your booking number
-      in the Glisten mobile app, or reply directly to this email.
-    </p>
-
-    <p>Kind regards,<br/>Glisten</p>
-  </div>
-  `.trim();
-
-  const mailOptions = {
-    from: "info@glistendetailing.co.uk",
-    to: booking.email,
-    subject: `Reminder: your Glisten booking tomorrow – ${bookingNumber}`,
-    text: textBody,
-    html: htmlBody,
-    attachments: [
-      {
-        filename: "logo.png",
-        path: path.join(__dirname, "logo.png"),
-        cid: "glistenLogo",
-      },
-    ],
-  };
-
-  try {
-    await transporter.sendMail(mailOptions);
-    console.log(
-      `✅ Sent REMINDER email for booking ${booking.id} to ${booking.email}`
-    );
-  } catch (err) {
-    console.error("❌ Failed to send reminder email:", err);
-  }
-}
-
 // ------------------ Time + postcode logic ------------------
 
 // Working hours: 08:30–16:30
@@ -2138,7 +2030,7 @@ app.post("/api/weather-check", async (req, res) => {
       });
     }
 
-    // Simple threshold: treat >= 8mm of rain as "heavy rain" for warning purposes
+    // Simple threshold: treat >= 4mm of rain as "heavy rain" for warning purposes
     const HEAVY_RAIN_THRESHOLD_MM = 4;
     const heavyRain = precipitationMm >= HEAVY_RAIN_THRESHOLD_MM;
 
