@@ -154,6 +154,10 @@ const transporter = nodemailer.createTransport({
   },
 });
 
+// Brand + from address for all customer emails
+const BUSINESS_NAME = "Glisten Detailing";
+const EMAIL_FROM = `"${BUSINESS_NAME}" <info@glistendetailing.co.uk>`;
+
 // ------------------ Google Calendar setup ------------------
 
 // Calendar that holds your real availability
@@ -325,7 +329,7 @@ async function sendBookingReceivedEmail(booking) {
   const textBody = `
 Hi ${booking.name || ""},
 
-Thanks for your booking request with Glisten.
+Thanks for your booking request with ${BUSINESS_NAME}.
 
 We’ve received your request and will review availability based on your location and chosen services. You’ll receive another email once your booking is confirmed or declined.
 
@@ -338,23 +342,23 @@ Details:
 - Car: ${booking.car_make || ""} ${booking.car_model || ""}
 - Services: ${servicesText}
 
-You’ll be able to amend or cancel this request using your booking number in the Glisten mobile app, or by replying directly to this email.
+You’ll be able to amend or cancel this request using your booking number in the ${BUSINESS_NAME} mobile app, or by replying directly to this email.
 
 Kind regards,
-Glisten
+${BUSINESS_NAME}
 `.trim();
 
   const htmlBody = `
   <div style="font-family: Arial, sans-serif; font-size: 14px; color: #222;">
     <div style="margin-bottom: 16px;">
       <img src="cid:glistenLogo"
-           alt="Glisten Detailing"
+           alt="${BUSINESS_NAME}"
            style="max-width: 240px; height: auto;" />
     </div>
 
     <p>Hi ${booking.name || ""},</p>
 
-    <p>Thanks for your booking request with <strong>Glisten</strong>.</p>
+    <p>Thanks for your booking request with <strong>${BUSINESS_NAME}</strong>.</p>
 
     <p>
       We’ve received your request and will review availability based on your location
@@ -374,15 +378,15 @@ Glisten
 
     <p>
       You can amend or cancel this request using your booking number
-      in the Glisten mobile app, or by replying directly to this email.
+      in the ${BUSINESS_NAME} mobile app, or by replying directly to this email.
     </p>
 
-    <p>Kind regards,<br/>Glisten</p>
+    <p>Kind regards,<br/>${BUSINESS_NAME}</p>
   </div>
   `.trim();
 
   const mailOptions = {
-    from: "info@glistendetailing.co.uk",
+    from: EMAIL_FROM,
     to: booking.email,
     subject: `We’ve received your booking request – ${bookingNumber}`,
     text: textBody,
@@ -406,7 +410,7 @@ Glisten
   }
 }
 
-// Email when you accept/decline a booking
+// Email when you accept/decline/cancel a booking
 async function sendBookingDecisionEmail(booking) {
   if (!booking.email) return;
 
@@ -419,12 +423,12 @@ async function sendBookingDecisionEmail(booking) {
   let htmlBody;
 
   if (status === "confirmed") {
-    subject = `Your booking is confirmed – ${bookingNumber}`;
+    subject = `Your booking with ${BUSINESS_NAME} is confirmed – ${bookingNumber}`;
 
     textBody = `
 Hi ${booking.name || ""},
 
-Good news – your booking with Glisten has been CONFIRMED.
+Good news – your booking with ${BUSINESS_NAME} has been CONFIRMED.
 
 Booking number: ${bookingNumber}
 
@@ -435,23 +439,23 @@ Details:
 - Car: ${booking.car_make || ""} ${booking.car_model || ""}
 - Services: ${servicesText}
 
-You can amend or cancel this booking using your booking number in the Glisten mobile app, or by replying directly to this email.
+You can amend or cancel this booking using your booking number in the ${BUSINESS_NAME} mobile app, or by replying directly to this email.
 
 Kind regards,
-Glisten
+${BUSINESS_NAME}
 `.trim();
 
     htmlBody = `
     <div style="font-family: Arial, sans-serif; font-size: 14px; color: #222;">
       <div style="margin-bottom: 16px;">
         <img src="cid:glistenLogo"
-             alt="Glisten Detailing"
+             alt="${BUSINESS_NAME}"
              style="max-width: 240px; height: auto;" />
       </div>
 
       <p>Hi ${booking.name || ""},</p>
 
-      <p><strong>Good news – your booking with Glisten has been CONFIRMED.</strong></p>
+      <p><strong>Good news – your booking with ${BUSINESS_NAME} has been CONFIRMED.</strong></p>
 
       <p><strong>Booking number:</strong> ${bookingNumber}</p>
 
@@ -465,19 +469,19 @@ Glisten
 
       <p>
         You can amend or cancel this booking using your booking number
-        in the Glisten mobile app, or by replying directly to this email.
+        in the ${BUSINESS_NAME} mobile app, or by replying directly to this email.
       </p>
 
-      <p>Kind regards,<br/>Glisten</p>
+      <p>Kind regards,<br/>${BUSINESS_NAME}</p>
     </div>
     `.trim();
   } else if (status === "declined") {
-    subject = `Your booking request – ${bookingNumber}`;
+    subject = `Your booking request with ${BUSINESS_NAME} – ${bookingNumber}`;
 
     textBody = `
 Hi ${booking.name || ""},
 
-Thank you for your booking request with Glisten.
+Thank you for your booking request with ${BUSINESS_NAME}.
 
 Unfortunately, we’re unable to take this booking at the requested time/location.
 
@@ -490,23 +494,23 @@ Details:
 - Car: ${booking.car_make || ""} ${booking.car_model || ""}
 - Services: ${servicesText}
 
-You can submit a new request in the Glisten mobile app using this booking number as a reference, or reply to this email to discuss alternatives.
+You can submit a new request in the ${BUSINESS_NAME} mobile app using this booking number as a reference, or reply to this email to discuss alternatives.
 
 Kind regards,
-Glisten
+${BUSINESS_NAME}
 `.trim();
 
     htmlBody = `
     <div style="font-family: Arial, sans-serif; font-size: 14px; color: #222;">
       <div style="margin-bottom: 16px;">
         <img src="cid:glistenLogo"
-             alt="Glisten Detailing"
+             alt="${BUSINESS_NAME}"
              style="max-width: 240px; height: auto;" />
       </div>
 
       <p>Hi ${booking.name || ""},</p>
 
-      <p>Thank you for your booking request with <strong>Glisten</strong>.</p>
+      <p>Thank you for your booking request with <strong>${BUSINESS_NAME}</strong>.</p>
 
       <p>
         Unfortunately, we’re unable to take this booking at the requested time/location.
@@ -523,49 +527,49 @@ Glisten
       </p>
 
       <p>
-        You can submit a new request in the Glisten mobile app using this booking number
+        You can submit a new request in the ${BUSINESS_NAME} mobile app using this booking number
         as a reference, or reply to this email to discuss alternative options.
       </p>
 
-      <p>Kind regards,<br/>Glisten</p>
+      <p>Kind regards,<br/>${BUSINESS_NAME}</p>
     </div>
     `.trim();
   } else if (status === "cancelled") {
-    subject = `Your booking has been cancelled – ${bookingNumber}`;
+    subject = `Your booking with ${BUSINESS_NAME} has been cancelled – ${bookingNumber}`;
 
     textBody = `
 Hi ${booking.name || ""},
 
-Your booking with Glisten has been cancelled.
+Your booking with ${BUSINESS_NAME} has been cancelled.
 
 Booking number: ${bookingNumber}
 
-If this was a mistake or you’d like to re-book, you can submit a new booking in the Glisten app or reply directly to this email.
+If this was a mistake or you’d like to re-book, you can submit a new booking in the ${BUSINESS_NAME} mobile app or reply directly to this email.
 
 Kind regards,
-Glisten
+${BUSINESS_NAME}
 `.trim();
 
     htmlBody = `
     <div style="font-family: Arial, sans-serif; font-size: 14px; color: #222;">
       <div style="margin-bottom: 16px;">
         <img src="cid:glistenLogo"
-             alt="Glisten Detailing"
+             alt="${BUSINESS_NAME}"
              style="max-width: 240px; height: auto;" />
       </div>
 
       <p>Hi ${booking.name || ""},</p>
 
-      <p>Your booking with <strong>Glisten</strong> has been <strong>cancelled</strong>.</p>
+      <p>Your booking with <strong>${BUSINESS_NAME}</strong> has been <strong>cancelled</strong>.</p>
 
       <p><strong>Booking number:</strong> ${bookingNumber}</p>
 
       <p>
         If this was a mistake or you’d like to re-book, you can submit a new booking
-        in the Glisten app or reply directly to this email.
+        in the ${BUSINESS_NAME} app or reply directly to this email.
       </p>
 
-      <p>Kind regards,<br/>Glisten</p>
+      <p>Kind regards,<br/>${BUSINESS_NAME}</p>
     </div>
     `.trim();
   } else {
@@ -574,7 +578,115 @@ Glisten
   }
 
   const mailOptions = {
-    from: "info@glistendetailing.co.uk",
+    from: EMAIL_FROM,
+    to: booking.email,
+    subject,
+    text: textBody,
+    html: htmlBody,
+    attachments: [
+      {
+        filename: "logo.png",
+        path: path.join(__dirname, "logo.png"),
+        cid: "glistenLogo",
+      },
+    ],
+  };
+
+  try {
+    await transporter.sendMail(mailOptions);
+    console.log(
+      `✅ Sent DECISION (${status}) email for booking ${booking.id} to ${booking.email}`
+    );
+  } catch (err) {
+    console.error("❌ Failed to send decision email:", err);
+  }
+}
+
+// Email reminder 1 day before the booking (for confirmed bookings only)
+async function sendBookingReminderEmail(booking) {
+  if (!booking.email) return;
+
+  const bookingNumber = `GL-${String(booking.id).padStart(5, "0")}`;
+  const servicesText = formatServicesText(booking.services);
+
+  const textBody = `
+Hi ${booking.name || ""},
+
+This is a quick reminder about your ${BUSINESS_NAME} booking tomorrow.
+
+Booking number: ${bookingNumber}
+
+Details:
+- Date: ${booking.preferred_date}
+- Time: ${booking.preferred_time}
+- Postcode: ${booking.postcode}
+- Car: ${booking.car_make || ""} ${booking.car_model || ""}
+- Services: ${servicesText}
+
+If you need to amend or cancel, you can use your booking number in the ${BUSINESS_NAME} mobile app, or reply directly to this email.
+
+Kind regards,
+${BUSINESS_NAME}
+`.trim();
+
+  const htmlBody = `
+  <div style="font-family: Arial, sans-serif; font-size: 14px; color: #222;">
+    <div style="margin-bottom: 16px;">
+      <img src="cid:glistenLogo"
+           alt="${BUSINESS_NAME}"
+           style="max-width: 240px; height: auto;" />
+    </div>
+
+    <p>Hi ${booking.name || ""},</p>
+
+    <p>This is a quick reminder about your <strong>${BUSINESS_NAME}</strong> booking <strong>tomorrow</strong>.</p>
+
+    <p><strong>Booking number:</strong> ${bookingNumber}</p>
+
+    <p><strong>Details:</strong><br/>
+      - Date: ${booking.preferred_date}<br/>
+      - Time: ${booking.preferred_time}<br/>
+      - Postcode: ${booking.postcode}<br/>
+      - Car: ${booking.car_make || ""} ${booking.car_model || ""}<br/>
+      - Services: ${servicesText}
+    </p>
+
+    <p>
+      If you need to amend or cancel, you can use your booking number
+      in the ${BUSINESS_NAME} mobile app, or reply directly to this email.
+    </p>
+
+    <p>Kind regards,<br/>${BUSINESS_NAME}</p>
+  </div>
+  `.trim();
+
+  const mailOptions = {
+    from: EMAIL_FROM,
+    to: booking.email,
+    subject: `Reminder: your ${BUSINESS_NAME} booking tomorrow – ${bookingNumber}`,
+    text: textBody,
+    html: htmlBody,
+    attachments: [
+      {
+        filename: "logo.png",
+        path: path.join(__dirname, "logo.png"),
+        cid: "glistenLogo",
+      },
+    ],
+  };
+
+  try {
+    await transporter.sendMail(mailOptions);
+    console.log(
+      `✅ Sent REMINDER email for booking ${booking.id} to ${booking.email}`
+    );
+  } catch (err) {
+    console.error("❌ Failed to send reminder email:", err);
+  }
+}
+
+  const mailOptions = {
+    from: EMAIL_FROM,
     to: booking.email,
     subject,
     text: textBody,
@@ -1329,6 +1441,20 @@ async function validateBooking({ date, postcode, services, preferred_time }) {
   }
 }
 
+// Helper: combine preferred_date + preferred_time into a JS Date
+function getBookingDateTime(booking) {
+  // expected:
+  // booking.preferred_date: '2025-12-06'
+  // booking.preferred_time: '08:30'
+  if (!booking.preferred_date || !booking.preferred_time) return null;
+
+  const [year, month, day] = booking.preferred_date.split("-").map(Number);
+  const [hour, minute] = booking.preferred_time.split(":").map(Number);
+
+  // Uses server local time; if server isn't UK later we can swap to a TZ-aware lib
+  return new Date(year, month - 1, day, hour, minute, 0, 0);
+}
+
 // ------------------ Routes ------------------
 
 app.get("/", (req, res) => {
@@ -1348,9 +1474,29 @@ app.get("/api/bookings", async (req, res) => {
       services: row.services ? JSON.parse(row.services) : [],
     }));
 
-    res.json(mapped);
+    const now = Date.now();
+    const cutoff = now - 24 * 60 * 60 * 1000; // 24 hours ago
+
+    const filtered = mapped.filter((booking) => {
+      // We only auto-hide "finished" bookings:
+      // confirmed, declined, or cancelled AND older than 24h.
+      if (!["confirmed", "declined", "cancelled"].includes(booking.status)) {
+        // pending bookings are always visible
+        return true;
+      }
+
+      const dt = getBookingDateTime(booking);
+      if (!dt) {
+        // if date/time is missing or malformed, keep it visible
+        return true;
+      }
+
+      return dt.getTime() >= cutoff;
+    });
+
+    res.json(filtered);
   } catch (err) {
-    console.error(err);
+    console.error("Error fetching bookings:", err);
     res.status(500).json({ error: "Failed to fetch bookings" });
   }
 });
