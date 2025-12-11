@@ -2136,18 +2136,15 @@ cron.schedule(
 app.listen(PORT, () => {
   console.log(`Server listening on port ${PORT}`);
 
-  // One-time Calendar → booking sync on startup (non-blocking)
   (async () => {
+    console.log("⏳ Running initial calendar sync on startup...");
     try {
       const updated = await syncConfirmedBookingsFromCalendar();
       console.log(
-        `🔄 Initial calendar sync on startup – updated ${updated} bookings.`
+        `✅ Initial calendar sync on startup – updated ${updated} bookings.`
       );
     } catch (err) {
-      console.error(
-        "❌ Initial calendar sync on startup failed:",
-        err.message || err
-      );
+      console.error("❌ Calendar+booking sync job failed:", err);
     }
   })();
 });
