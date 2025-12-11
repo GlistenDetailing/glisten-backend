@@ -1025,7 +1025,9 @@ async function createOrReplaceCalendarEventForBooking(booking) {
     const authClient = await googleAuth.getClient();
     const calendar = google.calendar({ version: "v3", auth: authClient });
 
-    const summary = `Detail – ${booking.name || "Customer"} (${booking.postcode})`;
+    // NEW: cleaner diary title: "GL-00042 - Andy Serghi"
+    const summary = `${bookingNumber} - ${booking.name || "Customer"}`;
+
     const description = [
       `Booking number: ${bookingNumber}`,
       "",
