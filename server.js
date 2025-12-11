@@ -113,6 +113,18 @@ db.serialize(() => {
       }
     }
   );
+
+  // 🔧 Map legacy 'accepted' status to 'confirmed'
+  db.run(
+    "UPDATE bookings SET status = 'confirmed' WHERE LOWER(TRIM(status)) = 'accepted'",
+    (err) => {
+      if (err) {
+        console.error("Failed to migrate 'accepted' statuses to 'confirmed':", err);
+      } else {
+        console.log("✅ Migrated legacy 'accepted' bookings to 'confirmed'");
+      }
+    }
+  );
 });
 
 // sqlite helpers
@@ -527,7 +539,7 @@ ${BUSINESS_NAME}
       </p>
 
       <p>
-        You can submit a new request in the ${BUSINESS_NAME} mobile app using this booking number
+        You can submit a new request in the ${BUSINESS_NAME} mobile app using your booking number
         as a reference, or reply to this email to discuss alternative options.
       </p>
 
@@ -1025,7 +1037,7 @@ async function createOrReplaceCalendarEventForBooking(booking) {
     const authClient = await googleAuth.getClient();
     const calendar = google.calendar({ version: "v3", auth: authClient });
 
-    // NEW: cleaner diary title: "GL-00042 - Andy Serghi"
+    // New summary: booking number + name
     const summary = `${bookingNumber} - ${booking.name || "Customer"}`;
 
     const description = [
@@ -1355,7 +1367,7 @@ app.get("/", (req, res) => {
   res.json({ ok: true, message: "Glisten backend running" });
 });
 
-// Get all bookings (admin)
+// Get all bookings (admin) – now returns ALL bookings with no auto-hide
 app.get("/api/bookings", async (req, res) => {
   try {
     const rows = await dbAll(
@@ -1368,27 +1380,8 @@ app.get("/api/bookings", async (req, res) => {
       services: row.services ? JSON.parse(row.services) : [],
     }));
 
-    const now = Date.now();
-    const cutoff = now - 24 * 60 * 60 * 1000; // 24 hours ago
-
-    const filtered = mapped.filter((booking) => {
-      // We only auto-hide "finished" bookings:
-      // confirmed, declined, or cancelled AND older than 24h.
-      if (!["confirmed", "declined", "cancelled"].includes(booking.status)) {
-        // pending bookings are always visible
-        return true;
-      }
-
-      const dt = getBookingDateTime(booking);
-      if (!dt) {
-        // if date/time is missing or malformed, keep it visible
-        return true;
-      }
-
-      return dt.getTime() >= cutoff;
-    });
-
-    res.json(filtered);
+    // No 24h filtering – admin app will see everything
+    res.json(mapped);
   } catch (err) {
     console.error("Error fetching bookings:", err);
     res.status(500).json({ error: "Failed to fetch bookings" });
