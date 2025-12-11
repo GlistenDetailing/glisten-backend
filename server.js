@@ -919,12 +919,28 @@ async function syncConfirmedBookingsFromCalendar() {
     const authClient = await googleAuth.getClient();
     const calendar = google.calendar({ version: "v3", auth: authClient });
 
-    const rows = await dbAll(
-      `SELECT id, calendar_event_id, preferred_date, preferred_time
-         FROM bookings
-        WHERE status = 'confirmed'
-          AND calendar_event_id IS NOT NULL`
-    );
+    let rows;
+    try {
+      rows = await dbAll(
+        `SELECT id, calendar_event_id, preferred_date, preferred_time
+           FROM bookings
+          WHERE status = 'confirmed'
+            AND calendar_event_id IS NOT NULL`
+      );
+    } catch (err) {
+      // Handles brand-new DBs where the column does not exist yet
+      if (
+        err &&
+        err.code === "SQLITE_ERROR" &&
+        String(err.message || "").includes("no such column: calendar_event_id")
+      ) {
+        console.warn(
+          "⚠️ calendar_event_id column not found yet; skipping initial calendar sync this startup."
+        );
+        return 0;
+      }
+      throw err;
+    }
 
     let updatedCount = 0;
 
