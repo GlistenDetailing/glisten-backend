@@ -19,10 +19,10 @@ app.use(express.json());
 // Allow overriding DB path via env (for persistent volume in hosting)
 const dbFile =
   process.env.DB_FILE && process.env.DB_FILE.trim().length > 0
-    ? process.env.DB_FILE
+    ? path.resolve(process.env.DB_FILE)
     : path.join(__dirname, "database.sqlite");
 
-console.log(`📁 Using SQLite DB file at: ${dbFile}`);
+console.log("📦 Using SQLite DB file:", dbFile);
 
 const db = new sqlite3.Database(dbFile);
 
